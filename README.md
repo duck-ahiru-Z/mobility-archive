@@ -12,7 +12,9 @@
 
 ## Cost guardrails
 
-R2 Standardの無料枠は月10 GB-month、Class A 100万回、Class B 1,000万回です。Workerは毎分4 feedを取得し、raw writeは月約25.9万回、static確認は月約8.6万回の想定です。さらに月次control objectでraw bytesを集計し、無料枠より低い8,000,000,000 bytesに達した月はraw保存を停止してログに警告します。請求ダッシュボードの使用量も定期確認してください。
+ R2 Standardの無料枠は月10 GB-month、Class A 100万回、Class B 1,000万回です。容量状態は8GB=warning、9GB=critical、9.5GB=emergency、10GB超=over_free_tierとして記録します。これらは警告状態であり、容量を理由にcollectorを停止しません。raw、Static GTFS、GitHub日次データの自動削除も行いません。超過時はCloudflareログと日次manifestに明示し、課金の可能性を人間が判断します。
+
+ raw objectは保存時にSHA-256をmetadataへ記録し、0 byte・HTTP失敗・GTFS-RT decode失敗を検出します。rawはR2がauthoritative archive、private GitHubはParquet + manifestのprocessed archiveです。
 
 ## R2 layout
 

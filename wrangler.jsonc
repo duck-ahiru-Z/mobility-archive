@@ -6,6 +6,6 @@
   "compatibility_flags": ["nodejs_compat"],
   "triggers": { "crons": ["* * * * *"] },
   "r2_buckets": [{"binding":"ARCHIVE_BUCKET","bucket_name":"mobility-archive-raw"}],
-  "vars": {"COLLECTOR_VERSION":"0.1.0","MAX_MONTHLY_RAW_BYTES":"8000000000"},
+  "vars": {"COLLECTOR_VERSION":"0.1.0"},
   "observability": {"enabled":true}
 }
