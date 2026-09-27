@@ -1,0 +1,2 @@
+import {describe,it,expect} from 'vitest'; import {keyFor,staticKey} from '../src/utils'; import {validateSource} from '../src/registry';
+describe('archive utilities',()=>{it('creates collision-resistant keys',()=>expect(keyFor('x','vehicle-positions',new Date('2026-09-27T11:15:00Z'),'abcdef123456789')).toContain('abcdef123456'));it('creates static version keys',()=>expect(staticKey('x','abc')).toBe('static/x/versions/abc.zip'));it('validates registry',()=>expect(()=>validateSource({} as any)).toThrow())});

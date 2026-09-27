@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mobility-archive-collector",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": { "crons": ["* * * * *"] },
+  "r2_buckets": [{"binding":"ARCHIVE_BUCKET","bucket_name":"mobility-archive-raw"}],
+  "vars": {"COLLECTOR_VERSION":"0.1.0"},
+  "observability": {"enabled":true}
+}
