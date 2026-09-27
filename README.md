@@ -10,6 +10,10 @@
 
 `Cron Trigger → Collector Worker → R2 raw/static archive → daily GitHub Action → Parquet + manifest`。内部時刻はUTC、利用者向け日次境界はAsia/Tokyoです。GTFS-Realtimeは観測ごとに保存し、同一contentでも観測時刻を失わない設計です。失敗はsource/feed単位で分離し、raw validationに失敗してもrawを捨てません。
 
+## Cost guardrails
+
+R2 Standardの無料枠は月10 GB-month、Class A 100万回、Class B 1,000万回です。Workerは毎分4 feedを取得し、raw writeは月約25.9万回、static確認は月約8.6万回の想定です。さらに月次control objectでraw bytesを集計し、無料枠より低い8,000,000,000 bytesに達した月はraw保存を停止してログに警告します。請求ダッシュボードの使用量も定期確認してください。
+
 ## R2 layout
 
 `raw/gtfs-rt/<source>/<feed>/YYYYMMDD/HHMMSS-hash.pb`、静的GTFSは`static/<source>/versions/<sha256>.zip`です。R2 metadataにはsource、時刻、HTTP情報、hash、collector version、validation結果を記録します。
