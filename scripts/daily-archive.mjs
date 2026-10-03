@@ -4,17 +4,18 @@ import crypto from 'node:crypto';
 import parquet from 'parquetjs-lite';
 import G from 'gtfs-realtime-bindings';
 import {S3Client,ListObjectsV2Command,GetObjectCommand} from '@aws-sdk/client-s3';
+import {listAllObjects,keyTimestamp,localDateOfKey,utcDatesForJstDate} from './daily-archive-lib.mjs';
 
 const date=process.env.ARCHIVE_DATE; const out=process.env.OUTPUT_DIR||'archive';
 if(!date) throw new Error('ARCHIVE_DATE is required');
 const sources=['wakayama-bus','wakayama-bus-naga']; const feeds=['vehicle-positions','trip-updates']; const expectedRunsPerFeed=1440;
-const keyTimestamp=k=>{const m=k.match(/\/(\d{8})\/(\d{6})(?:-[^/]+)?\.pb$/);if(!m)return null;const u=m[1];return new Date(`${u.slice(0,4)}-${u.slice(4,6)}-${u.slice(6,8)}T${m[2].slice(0,2)}:${m[2].slice(2,4)}:${m[2].slice(4,6)}Z`)};
-const localDateOfKey=k=>{const d=keyTimestamp(k);return d?new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo'}).format(d):null};
 const client=new S3Client({region:'auto',endpoint:`https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,credentials:{accessKeyId:process.env.R2_ACCESS_KEY_ID,secretAccessKey:process.env.R2_SECRET_ACCESS_KEY}});
 const schema=new parquet.ParquetSchema({observed_at:{type:'TIMESTAMP_MILLIS'},source_id:{type:'UTF8'},feed_type:{type:'UTF8'},entity_id:{type:'UTF8',optional:true},trip_id:{type:'UTF8',optional:true},route_id:{type:'UTF8',optional:true},vehicle_id:{type:'UTF8',optional:true},latitude:{type:'DOUBLE',optional:true},longitude:{type:'DOUBLE',optional:true},delay_seconds:{type:'INT64',optional:true},raw_object_key:{type:'UTF8'},raw_sha256:{type:'UTF8'},collector_version:{type:'UTF8'}});
 const objects=[];
-const utcDay=new Date(`${date}T00:00:00+09:00`);utcDay.setUTCDate(utcDay.getUTCDate()-1);const utcDates=[utcDay.toISOString().slice(0,10).replaceAll('-',''),date.replaceAll('-','')];
-for(const source of sources) for(const feed of feeds) for(const utcDate of utcDates){const p=`raw/gtfs-rt/${source}/${feed}/${utcDate}/`;const r=await client.send(new ListObjectsV2Command({Bucket:process.env.R2_BUCKET,Prefix:p}));objects.push(...(r.Contents||[]).map(x=>({...x,source,feed})).filter(x=>localDateOfKey(x.Key)===date))}
+// R2 partitions are UTC calendar dates. A JST day spans the previous UTC date
+// from 15:00 through the target UTC date at 14:59.
+const utcDates=utcDatesForJstDate(date);
+for(const source of sources) for(const feed of feeds){const listed=[];for(const utcDate of utcDates){const prefix=`raw/gtfs-rt/${source}/${feed}/${utcDate}/`;const pageObjects=await listAllObjects(client,input=>new ListObjectsV2Command(input),{bucket:process.env.R2_BUCKET,prefix});listed.push(...pageObjects.map(x=>({...x,source,feed})))}const filtered=listed.filter(x=>localDateOfKey(x.Key)===date);console.log({source_id:source,feed_type:feed,objects_before_jst_filter:listed.length,objects_after_jst_filter:filtered.length});objects.push(...filtered)}
 let r2Bytes=null;try{const month=date.slice(0,7).replace('-','');const body=await (await client.send(new GetObjectCommand({Bucket:process.env.R2_BUCKET,Key:`_control/monthly/${month}.json`}))).Body.transformToString();r2Bytes=JSON.parse(body).bytes}catch{}
 const dailyGrowth=objects.reduce((n,o)=>n+Number(o.Size||0),0), projected30=dailyGrowth*30, projected365=dailyGrowth*365;
 const storageStatus=r2Bytes==null?'unknown':r2Bytes>=10_000_000_000?'over_free_tier':r2Bytes>=9_500_000_000?'emergency':r2Bytes>=9_000_000_000?'critical':r2Bytes>=8_000_000_000?'warning':'normal';
