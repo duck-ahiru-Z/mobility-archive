@@ -10,11 +10,16 @@ export default {
     }
     return new Response('Mobility Archive collector is running. Use the scheduled event.', {status: 200});
   },
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    const scheduledAt = scheduledCollectionTime(event);
     ctx.waitUntil(
-      collect(env,new Date(),shouldCollectStatic(new Date()))
+      collect(env,scheduledAt,shouldCollectStatic(scheduledAt))
         .then(r => console.log(JSON.stringify({event: 'collection_complete', results: r})))
         .catch(e => console.error(JSON.stringify({event: 'collection_failed', error: String(e)})))
     );
   }
 };
+
+export function scheduledCollectionTime(event: Pick<ScheduledEvent, 'scheduledTime'>): Date {
+  return new Date(event.scheduledTime);
+}
