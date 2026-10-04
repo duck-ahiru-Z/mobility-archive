@@ -7,6 +7,11 @@ on:
         required: false
   schedule:
     - cron: '17 18 * * *' # 03:17 JST, previous JST date is complete
+
+concurrency:
+  group: mobility-archive-data-writer
+  cancel-in-progress: false
+
 jobs:
   archive:
     runs-on: ubuntu-latest
