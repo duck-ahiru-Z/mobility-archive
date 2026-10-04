@@ -11,6 +11,7 @@ on:
 concurrency:
   group: mobility-archive-data-writer
   cancel-in-progress: false
+  queue: max
 
 jobs:
   archive:
