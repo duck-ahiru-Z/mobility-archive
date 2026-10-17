@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderJobSummary } from '../scripts/daily-archive-summary.mjs';
+import { elapsedSinceEpochMs, renderJobSummary } from '../scripts/daily-archive-summary.mjs';
 
 describe('daily archive job summary', () => {
   it('shows feed-level quality and labels storage estimates without exposing raw keys', () => {
@@ -29,5 +29,11 @@ describe('daily archive job summary', () => {
     const summary = renderJobSummary(null, { jobStatus: 'failure', workflowElapsedMs: null });
     expect(summary).toContain('Workflow status at summary: **failure**');
     expect(summary).toContain('date unavailable');
+  });
+
+  it('treats workflow start as numeric Unix epoch milliseconds', () => {
+    expect(elapsedSinceEpochMs('1792191000000', 1792191005000)).toBe(5000);
+    expect(elapsedSinceEpochMs('not-a-number', 1792191005000)).toBeNull();
+    expect(elapsedSinceEpochMs('1792191006000', 1792191005000)).toBeNull();
   });
 });

@@ -17,7 +17,7 @@ const feeds = ['vehicle-positions', 'trip-updates'];
 const expectedRunsPerFeed = 1440;
 const client = new S3Client({
   region: 'auto',
-  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: process.env.R2_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY },
 });
 
@@ -88,6 +88,7 @@ const manifest = {
     success_rate: 'Unique JST minute slots with a successfully decoded feed divided by 1440; valid empty feeds count as success, duplicates cannot exceed 100%',
     valid_feed_count: 'Decode-successful objects, including valid empty feeds; valid_empty_feed_count is a subset',
     invalid_feed_count: 'HTTP-successful archived objects that were zero-byte or failed protobuf validation',
+    checksum_mismatch_count: 'Archived objects whose SHA-256 does not match stored metadata; these are not decoded or written to Parquet',
     http_failure_count: 'Archived objects whose stored provider HTTP status was non-2xx; absence is counted as a missing interval, not an inferred HTTP failure',
     r2_read_failure_count: 'R2 GetObject/body-read failures during this daily job',
     missing_interval_count: 'Expected JST minutes without an archived object having a successful stored provider HTTP status',
@@ -113,6 +114,7 @@ for (const source of sources) {
     let valid = 0;
     let validEmpty = 0;
     let invalid = 0;
+    let checksumMismatch = 0;
     let httpFailure = 0;
     let r2ReadFailure = 0;
     let httpSuccess = 0;
@@ -138,7 +140,7 @@ for (const source of sources) {
       const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
       const expectedSha = response.Metadata?.sha256 || '';
       let checksumError = null;
-      if (expectedSha && expectedSha !== sha256) checksumError = { key: object.Key, error: 'sha256_mismatch' };
+      if (expectedSha && expectedSha !== sha256) return { kind: 'checksum_mismatch', key: object.Key, slot: localMinuteSlotOfKey(object.Key), expectedSha, actualSha: sha256 };
       if (bytes.length === 0) return { kind: 'invalid', key: object.Key, slot: localMinuteSlotOfKey(object.Key), checksumError, parseError: 'zero_byte_object' };
       try {
         const message = G.transit_realtime.FeedMessage.decode(bytes);
@@ -177,8 +179,10 @@ for (const source of sources) {
         } else {
           httpSuccess++;
           if (result.slot) seenSlots.add(result.slot);
-          if (result.checksumError) errors.push(result.checksumError);
-          if (result.kind === 'invalid') {
+          if (result.kind === 'checksum_mismatch') {
+            checksumMismatch++;
+            errors.push({ key: result.key, error: 'sha256_mismatch', expected: result.expectedSha, actual: result.actualSha });
+          } else if (result.kind === 'invalid') {
             invalid++;
             errors.push({ key: result.key, error: result.parseError });
           } else {
@@ -210,6 +214,7 @@ for (const source of sources) {
       valid_feed_count: valid,
       valid_empty_feed_count: validEmpty,
       invalid_feed_count: invalid,
+      checksum_mismatch_count: checksumMismatch,
       http_successful_fetch_count: httpSuccess,
       http_failure_count: httpFailure,
       r2_read_failure_count: r2ReadFailure,
@@ -220,15 +225,15 @@ for (const source of sources) {
       validation_errors: errors,
       processing_duration_ms: Date.now() - feedStartedAt,
     });
-    log('feed_processing_completed', { source_id: source, feed_type: feed, objects: related.length, decoded: valid, valid_empty: validEmpty, invalid, http_failure: httpFailure, r2_read_failure: r2ReadFailure, missing_intervals: missing.length, duration_ms: Date.now() - feedStartedAt });
+    log('feed_processing_completed', { source_id: source, feed_type: feed, objects: related.length, decoded: valid, valid_empty: validEmpty, invalid, checksum_mismatch: checksumMismatch, http_failure: httpFailure, r2_read_failure: r2ReadFailure, missing_intervals: missing.length, duration_ms: Date.now() - feedStartedAt });
   }
 
   if (writer) await writer.close();
   const outputFiles = writer ? [path.relative(out, outputFile).replaceAll('\\', '/')] : [];
   const total = feedStats.reduce((accumulator, stats) => {
-    for (const key of ['expected_fetch_count', 'saved_raw_object_count', 'successful_fetch_count', 'failed_fetch_count', 'valid_feed_count', 'valid_empty_feed_count', 'invalid_feed_count', 'http_successful_fetch_count', 'http_failure_count', 'r2_read_failure_count', 'unique_successful_slot_count', 'unique_valid_slot_count', 'missing_interval_count']) accumulator[key] += stats[key];
+    for (const key of ['expected_fetch_count', 'saved_raw_object_count', 'successful_fetch_count', 'failed_fetch_count', 'valid_feed_count', 'valid_empty_feed_count', 'invalid_feed_count', 'checksum_mismatch_count', 'http_successful_fetch_count', 'http_failure_count', 'r2_read_failure_count', 'unique_successful_slot_count', 'unique_valid_slot_count', 'missing_interval_count']) accumulator[key] += stats[key];
     return accumulator;
-  }, { expected_fetch_count: 0, saved_raw_object_count: 0, successful_fetch_count: 0, failed_fetch_count: 0, valid_feed_count: 0, valid_empty_feed_count: 0, invalid_feed_count: 0, http_successful_fetch_count: 0, http_failure_count: 0, r2_read_failure_count: 0, unique_successful_slot_count: 0, unique_valid_slot_count: 0, missing_interval_count: 0 });
+  }, { expected_fetch_count: 0, saved_raw_object_count: 0, successful_fetch_count: 0, failed_fetch_count: 0, valid_feed_count: 0, valid_empty_feed_count: 0, invalid_feed_count: 0, checksum_mismatch_count: 0, http_successful_fetch_count: 0, http_failure_count: 0, r2_read_failure_count: 0, unique_successful_slot_count: 0, unique_valid_slot_count: 0, missing_interval_count: 0 });
   manifest.sources.push({
     source_id: source,
     ...total,
@@ -242,5 +247,9 @@ for (const source of sources) {
 }
 
 manifest.processing.duration_ms = Date.now() - startedAt;
+const failures = manifest.sources.flatMap((source) => source.feeds).reduce((total, feed) => total + feed.r2_read_failure_count + feed.invalid_feed_count + feed.checksum_mismatch_count + feed.http_failure_count, 0);
+manifest.processing.failure_count = failures;
+manifest.processing.status = failures === 0 ? 'success' : 'failed';
 await fs.writeFile(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
-log('daily_archive_completed', { date, listed_objects: objects.length, daily_raw_bytes: dailyRawBytes, duration_ms: manifest.processing.duration_ms });
+log('daily_archive_completed', { date, listed_objects: objects.length, daily_raw_bytes: dailyRawBytes, failure_count: failures, status: manifest.processing.status, duration_ms: manifest.processing.duration_ms });
+if (failures > 0) process.exitCode = 1;
