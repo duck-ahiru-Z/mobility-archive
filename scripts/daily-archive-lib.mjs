@@ -26,6 +26,23 @@ export function localDateOfKey(key) {
   return timestamp ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(timestamp) : null;
 }
 
+export function localMinuteSlotOfKey(key) {
+  const timestamp = keyTimestamp(key);
+  if (!timestamp) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+    .formatToParts(timestamp).reduce((result, part) => (result[part.type] = part.value, result), {});
+  return `${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}`;
+}
+
+export function missingJstMinuteSlots(date, seen) {
+  const missing = [];
+  for (let hour = 0; hour < 24; hour++) for (let minute = 0; minute < 60; minute++) {
+    const slot = `${date.replaceAll('-', '')}${String(hour).padStart(2, '0')}${String(minute).padStart(2, '0')}`;
+    if (!seen.has(slot)) missing.push(slot);
+  }
+  return missing;
+}
+
 export function utcDatesForJstDate(date) {
   const previousUtc = new Date(`${date}T00:00:00+09:00`);
   return [previousUtc.toISOString().slice(0, 10).replaceAll('-', ''), date.replaceAll('-', '')];
