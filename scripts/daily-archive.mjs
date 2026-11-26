@@ -28,6 +28,7 @@ const schema = new parquet.ParquetSchema({
   delay_seconds: { type: 'INT64', optional: true }, raw_object_key: { type: 'UTF8' }, raw_sha256: { type: 'UTF8' },
   collector_version: { type: 'UTF8' },
 });
+const snapshotSchema = new parquet.ParquetSchema({raw_object_key:{type:'UTF8'},raw_sha256:{type:'UTF8'},source_id:{type:'UTF8'},feed_type:{type:'UTF8'},metadata_json:{type:'UTF8'},header_json:{type:'UTF8'},entity_count:{type:'INT64'},decoded_entities_json:{type:'UTF8'}});
 
 const log = (event, fields = {}) => console.log(JSON.stringify({ event, ...fields }));
 const objects = [];
@@ -102,6 +103,9 @@ for (const source of sources) {
   const feedStats = [];
   let parsedEntityCount = 0;
   let writer = null;
+  let snapshotWriter = null;
+  let snapshotCount = 0;
+  const snapshotFile = path.join(outDir,'snapshots-v2',`${source}.parquet`);
   const outputFile = path.join(outDir, `${source}.parquet`);
   const publish = process.env.ALLOW_PRIVATE_DATASET === 'true';
 
@@ -160,7 +164,9 @@ for (const source of sources) {
           raw_sha256: sha256,
           collector_version: '0.1.0',
         }));
-        return { kind: 'valid', key: object.Key, slot: localMinuteSlotOfKey(object.Key), rowCount: rows.length, rows, checksumError };
+        const decoded = G.transit_realtime.FeedMessage.toObject(message,{longs:String,enums:Number,defaults:false});
+        const snapshot = process.env.WRITE_SNAPSHOT_V2 === 'true' ? {raw_object_key:object.Key,raw_sha256:sha256,source_id:source,feed_type:feed,metadata_json:JSON.stringify(response.Metadata||{}),header_json:JSON.stringify(decoded.header),entity_count:message.entity.length,decoded_entities_json:JSON.stringify(decoded.entity||[])} : null;
+        return { kind: 'valid', key: object.Key, slot: localMinuteSlotOfKey(object.Key), rowCount: rows.length, rows, snapshot, checksumError };
       } catch {
         return { kind: 'invalid', key: object.Key, slot: localMinuteSlotOfKey(object.Key), checksumError, parseError: 'protobuf_decode_failed' };
       }
@@ -190,6 +196,10 @@ for (const source of sources) {
             if (result.slot) validSlots.add(result.slot);
             if (result.rowCount === 0) validEmpty++;
             feedEntityCount += result.rowCount;
+            if (publish && result.snapshot) {
+              if (!snapshotWriter) { await fs.mkdir(path.dirname(snapshotFile),{recursive:true});snapshotWriter=await parquet.ParquetWriter.openFile(snapshotSchema,snapshotFile); }
+              await snapshotWriter.appendRow(result.snapshot);snapshotCount++;
+            }
             if (publish && result.rows.length) {
               if (!writer) writer = await parquet.ParquetWriter.openFile(schema, outputFile);
               for (const row of result.rows) await writer.appendRow(row);
@@ -229,6 +239,7 @@ for (const source of sources) {
   }
 
   if (writer) await writer.close();
+  if (snapshotWriter) await snapshotWriter.close();
   const outputFiles = writer ? [path.relative(out, outputFile).replaceAll('\\', '/')] : [];
   const total = feedStats.reduce((accumulator, stats) => {
     for (const key of ['expected_fetch_count', 'saved_raw_object_count', 'successful_fetch_count', 'failed_fetch_count', 'valid_feed_count', 'valid_empty_feed_count', 'invalid_feed_count', 'checksum_mismatch_count', 'http_successful_fetch_count', 'http_failure_count', 'r2_read_failure_count', 'unique_successful_slot_count', 'unique_valid_slot_count', 'missing_interval_count']) accumulator[key] += stats[key];
@@ -243,6 +254,7 @@ for (const source of sources) {
     publish_daily_dataset: false,
     private_archive: true,
     output_files: outputFiles,
+    ...(snapshotWriter ? {snapshot_schema_version:'2',snapshot_count:snapshotCount,snapshot_files:[path.relative(out,snapshotFile).replaceAll('\\','/')]} : {}),
   });
 }
 

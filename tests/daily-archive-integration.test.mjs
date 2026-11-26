@@ -114,6 +114,7 @@ describe('daily archive fixture integration', () => {
           R2_SECRET_ACCESS_KEY: 'fixture-secret-not-real',
           R2_BUCKET: 'mobility-archive-raw',
           ALLOW_PRIVATE_DATASET: 'true',
+          WRITE_SNAPSHOT_V2: 'true',
           AWS_EC2_METADATA_DISABLED: 'true',
         },
         maxBuffer: 2 * 1024 * 1024,
@@ -141,6 +142,13 @@ describe('daily archive fixture integration', () => {
     expect(manifest.processing.failure_count).toBe(3);
 
     const wb = manifest.sources.find((source) => source.source_id === 'wakayama-bus');
+    expect(wb.snapshot_count).toBe(2);
+    const snapshots=await parquet.ParquetReader.openFile(path.join(dayDir,'snapshots-v2','wakayama-bus.parquet'));
+    const snapshotRows=[];const snapshotCursor=snapshots.getCursor();let snapshotRow;
+    while((snapshotRow=await snapshotCursor.next())!==null)snapshotRows.push(snapshotRow);
+    await snapshots.close();
+    expect(snapshotRows).toHaveLength(2);
+    expect(snapshotRows.some(r=>Number(r.entity_count)===0 && JSON.parse(r.decoded_entities_json).length===0)).toBe(true);
     const wbVehicle = wb.feeds.find((feed) => feed.feed_type === 'vehicle-positions');
     const wbTrip = wb.feeds.find((feed) => feed.feed_type === 'trip-updates');
     expect(wbVehicle.r2_read_failure_count).toBe(1);

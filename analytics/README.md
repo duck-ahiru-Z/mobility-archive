@@ -2,6 +2,8 @@
 
 ## Reconstruction entry point (2026-11-26)
 
+Daily processing can additionally write `snapshots-v2/<source>.parquet` with `WRITE_SNAPSHOT_V2=true` and `ALLOW_PRIVATE_DATASET=true`. The daily workflow enables this flag. Existing entity Parquet stays schema v1; manifests list v2 files separately in `snapshot_files`, with `snapshot_count` including valid empty feeds. V2 stores supported decoded entities and headers as JSON, preserves raw hashes and R2 custom metadata, and keeps omitted fields absent. Unknown protobuf fields still require the immutable raw original. Existing historical outputs are not automatically backfilled.
+
 After authenticating with `npx.cmd wrangler login`, inspect post-fix R2 snapshots and generate the recovery replay:
 
 ```powershell
