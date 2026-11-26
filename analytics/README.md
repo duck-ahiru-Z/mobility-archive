@@ -2,6 +2,15 @@
 
 ## Reconstruction entry point (2026-11-26)
 
+After authenticating with `npx.cmd wrangler login`, inspect post-fix R2 snapshots and generate the recovery replay:
+
+```powershell
+node analytics/check-live-r2.mjs
+node analytics/build-recovery-replay.mjs
+```
+
+Open http://127.0.0.1:4173/recovery.html while the local server is running. This separate verification view uses actual fetched timestamps and exact positions from post-fix originals, without interpolation. It is a short sample, not a complete daily archive. Raw downloads and generated reports stay local.
+
 Generate and serve the current local Explorer:
 
 ```powershell
