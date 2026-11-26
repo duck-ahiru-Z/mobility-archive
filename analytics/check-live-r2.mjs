@@ -10,10 +10,17 @@ const headers={Authorization:`Bearer ${token}`};
 const now=new Date();const date=now.toISOString().slice(0,10).replaceAll('-','');
 const results=[];
 for(const source of ['wakayama-bus','wakayama-bus-naga'])for(const feed of ['vehicle-positions','trip-updates']){
- const url=new URL(base);url.searchParams.set('prefix',`raw/gtfs-rt/${source}/${feed}/${date}/${now.toISOString().slice(11,16).replace(':','').slice(0,3)}`);
- url.searchParams.set('limit','1000');const response=await fetch(url,{headers});if(!response.ok)throw new Error(`List HTTP ${response.status}`);
- const listing=await response.json();if(!listing.success)throw new Error('R2 listing failed');
- for(const object of listing.result.sort((a,b)=>a.key.localeCompare(b.key))){
+ const objects=[];let cursor;
+ do{
+  const url=new URL(base);url.searchParams.set('prefix',`raw/gtfs-rt/${source}/${feed}/${date}/${now.toISOString().slice(11,13)}`);if(cursor)url.searchParams.set('cursor',cursor);
+  const response=await fetch(url,{headers});if(!response.ok)throw new Error(`List HTTP ${response.status}`);
+  const listing=await response.json();if(!listing.success)throw new Error('R2 listing failed');objects.push(...listing.result);
+  cursor=listing.result_info?.is_truncated?listing.result_info.cursor:null;
+  if(listing.result_info?.is_truncated&&!cursor)throw new Error('Missing R2 continuation cursor');
+ }while(cursor);
+ const since=Date.parse(process.argv[2]||new Date(now.getTime()-15*60000).toISOString());
+ if(!Number.isFinite(since))throw new Error('Invalid start timestamp');
+ for(const object of objects.filter(o=>Date.parse(o.custom_metadata?.fetched_at)>=since).sort((a,b)=>a.key.localeCompare(b.key))){
   const r=await fetch(`${base}/${object.key}`,{headers});if(!r.ok)throw new Error(`GET HTTP ${r.status}`);
   const bytes=Buffer.from(await r.arrayBuffer());const message=G.transit_realtime.FeedMessage.decode(bytes);
   const metadata=object.custom_metadata||{};const header=Number(message.header.timestamp);
