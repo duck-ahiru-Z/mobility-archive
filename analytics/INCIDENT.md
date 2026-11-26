@@ -9,3 +9,9 @@ The deployed Worker used plain fetch without cache bypass. Realtime fetch now us
 Cron remains every minute. No old R2 object was overwritten or deleted by the investigation. Historical missing movement cannot be reconstructed from repeated bytes; keep old data with freshness qualifications. Local raw samples and generated Explorer datasets are intentionally excluded from commits.
 
 Checks: two Collector cache-policy tests and TypeScript pass. The Explorer exposes manifest-derived minute coverage separately from header freshness and provides JST replay controls. Its availability does not imply historical minute trajectory accuracy.
+
+## Fields recoverable from originals
+
+Historical static versions preceding the observation dates were downloaded and hash-verified for September 29 and November 25. All present trip_id and route_id values in both operators' Parquet rows joined those selected versions. This verifies identifier consistency, not complete service-calendar validation.
+
+Raw TripUpdate contains explicit stop arrival/departure delay values omitted by the v1 Parquet projection. The five-adjacent-object sample deduplicates to one payload per source/date. September 29 Wakayama has 753 stop updates, arrival delay mean 163.36 seconds, median 141, max 738; Naga has 164, mean 152.47, median 124, max 415. All sampled stop IDs join Static GTFS. These are predicted stop-event values from a single stale snapshot per operator, not daily vehicle-delay averages. Arrival and departure statistics must remain separate. The originals can recover these omitted fields, although they cannot recover vehicle movements absent from the repeated original snapshots.
