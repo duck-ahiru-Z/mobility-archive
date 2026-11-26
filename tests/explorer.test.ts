@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const output = process.env.EXPLORER_OUTPUT || 'reports/explorer';
-const index = JSON.parse(fs.readFileSync(`${output}/data/index.json`, 'utf8'));
+const output = process.env.EXPLORER_OUTPUT || 'reports/verified-explorer';
+const available=fs.existsSync(`${output}/data/index.json`);
+if(process.env.EXPLORER_OUTPUT && !available)throw new Error(`Requested Explorer output is missing: ${output}`);
+const index = available ? JSON.parse(fs.readFileSync(`${output}/data/index.json`, 'utf8')) : null;
 
-describe('generated Mobility Archive Explorer', () => {
+describe.skipIf(!available)('generated Mobility Archive Explorer (generate local private data first)', () => {
   it('formats UTC timestamps across the JST date boundary', () => {
     const page=fs.readFileSync(`${output}/index.html`,'utf8');
     const formatter=page.match(/function jst\(value\)\{[^}]+\}\)[^}]+\}/)?.[0];

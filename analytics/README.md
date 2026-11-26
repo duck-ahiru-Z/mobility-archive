@@ -1,5 +1,9 @@
 # Mobility Archive Explorer and data coverage notes
 
+Current status (2026-11-26): the local Explorer contains 60 dates through November 25. Production cache bypass was deployed as 582ba7e5 with explicit approval; a continuous ten-minute window of four feeds was verified fresh, with no missing feed/minute slots and maximum sampled header age about 23 seconds. Forty historical originals matched their Parquet hashes and coordinates. Historical Static GTFS trip/route joins and sampled stop joins were verified for September 29 and November 25. PR #2 adds full decoded daily snapshots but awaits merge approval. Sections below describing unavailable R2 access are historical investigation notes, not current access status. See INCIDENT.md for evidence and limitations.
+
+Generated-output tests use `EXPLORER_OUTPUT=reports/verified-explorer`. They skip on a fresh checkout without private generated data; explicitly selecting a missing output fails. The production conversion fixture tests do not require private data and still run normally.
+
 ## Reconstruction entry point (2026-11-26)
 
 Daily processing can additionally write `snapshots-v2/<source>.parquet` with `WRITE_SNAPSHOT_V2=true` and `ALLOW_PRIVATE_DATASET=true`. The daily workflow enables this flag. Existing entity Parquet stays schema v1; manifests list v2 files separately in `snapshot_files`, with `snapshot_count` including valid empty feeds. V2 stores supported decoded entities and headers as JSON, preserves raw hashes and R2 custom metadata, and keeps omitted fields absent. Unknown protobuf fields still require the immutable raw original. Existing historical outputs are not automatically backfilled.
