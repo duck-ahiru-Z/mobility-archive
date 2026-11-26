@@ -94,6 +94,8 @@ const page = html()
   .replace('<div id="replay-time"></div>', '<div id="replay-time"></div><p class="muted">位置は保存済みVehiclePositionの値です。再生時刻はR2 object keyの予定時刻を使います（実際のfetched_atはParquetに未保存）。同じraw内容が続く間、マーカーは動きません。</p>')
   .replaceAll('First observation', 'First key time')
   .replaceAll('Last observation', 'Last key time')
+  .replace('missing intervals are real archive gaps.', 'missing intervals are derived from the daily manifest; this view does not independently list all R2 objects.')
+  .replace('delay_seconds field is present in schema, but no delay values were populated in the archived rows.', "'+(q.rawDelaySamples?q.rawDelaySamples.map(s=>s.source+': sampled arrival delay mean '+fmt(s.arrivalDelayValues.meanSeconds)+'s, median '+fmt(s.arrivalDelayValues.medianSeconds)+'s, max '+fmt(s.arrivalDelayValues.maxSeconds)+'s; '+s.stopUpdates+' stop predictions. ONE unique stale snapshot per operator, NOT daily statistics.').join(' · '):'v1 Parquet omitted delay values; raw TripUpdate may contain stop event delays.')+'")
   .replace('Static GTFS files are not present in this data checkout; trip/route/stop join is therefore not claimed.', "'+(q.staticJoinChecks?q.staticJoinChecks.map(c=>c.source+': trip '+c.tripJoined+'/'+c.tripPresent+', route '+c.routeJoined+'/'+c.routePresent+' (static '+c.staticHash.slice(0,12)+')').join(' · '):'Static GTFS join not yet verified for this date.')+'")
   .replace("if(!map.hasLayer(m))m.addTo(map);markers.push(m)", "m.setPopupContent(document.createTextNode([r.source,r.vehicle,r.trip,r.route,r.routeShortName,r.routeLongName,r.destination,jst(r.t),r.lat+', '+r.lon].filter(x=>x!=null&&x!=='').join(' / ')));if(!map.hasLayer(m))m.addTo(map);markers.push(m)");
 await fs.writeFile(path.join(out,'index.html'), page);
