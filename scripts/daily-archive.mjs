@@ -3,6 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import parquet from 'parquetjs-lite';
 import G from 'gtfs-realtime-bindings';
+import {SnapshotParts} from './snapshot-parts.mjs';
+import {assertPublishableFiles} from './publish-size-guard.mjs';
 import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { listAllObjects, localDateOfKey, localMinuteSlotOfKey, missingJstMinuteSlots, utcDatesForJstDate } from './daily-archive-lib.mjs';
 import { growthEstimate, PROCESS_BATCH_SIZE, processInBatches, R2_GET_CONCURRENCY } from './daily-archive-processing.mjs';
@@ -28,7 +30,7 @@ const schema = new parquet.ParquetSchema({
   delay_seconds: { type: 'INT64', optional: true }, raw_object_key: { type: 'UTF8' }, raw_sha256: { type: 'UTF8' },
   collector_version: { type: 'UTF8' },
 });
-const snapshotSchema = new parquet.ParquetSchema({raw_object_key:{type:'UTF8'},raw_sha256:{type:'UTF8'},source_id:{type:'UTF8'},feed_type:{type:'UTF8'},metadata_json:{type:'UTF8'},header_json:{type:'UTF8'},entity_count:{type:'INT64'},decoded_entities_json:{type:'UTF8'}});
+const snapshotSchema = new parquet.ParquetSchema({raw_object_key:{type:'UTF8'},raw_sha256:{type:'UTF8'},source_id:{type:'UTF8'},feed_type:{type:'UTF8'},metadata_json:{type:'UTF8',compression:'GZIP'},header_json:{type:'UTF8',compression:'GZIP'},entity_count:{type:'INT64'},decoded_entities_json:{type:'UTF8',compression:'GZIP'}});
 
 const log = (event, fields = {}) => console.log(JSON.stringify({ event, ...fields }));
 const objects = [];
@@ -197,7 +199,7 @@ for (const source of sources) {
             if (result.rowCount === 0) validEmpty++;
             feedEntityCount += result.rowCount;
             if (publish && result.snapshot) {
-              if (!snapshotWriter) { await fs.mkdir(path.dirname(snapshotFile),{recursive:true});snapshotWriter=await parquet.ParquetWriter.openFile(snapshotSchema,snapshotFile); }
+              if (!snapshotWriter) { snapshotWriter=new SnapshotParts(snapshotSchema,snapshotFile); }
               await snapshotWriter.appendRow(result.snapshot);snapshotCount++;
             }
             if (publish && result.rows.length) {
@@ -240,6 +242,7 @@ for (const source of sources) {
 
   if (writer) await writer.close();
   if (snapshotWriter) await snapshotWriter.close();
+  if (publish) await assertPublishableFiles([...(writer ? [outputFile] : []), ...(snapshotWriter?.files || [])]);
   const outputFiles = writer ? [path.relative(out, outputFile).replaceAll('\\', '/')] : [];
   const total = feedStats.reduce((accumulator, stats) => {
     for (const key of ['expected_fetch_count', 'saved_raw_object_count', 'successful_fetch_count', 'failed_fetch_count', 'valid_feed_count', 'valid_empty_feed_count', 'invalid_feed_count', 'checksum_mismatch_count', 'http_successful_fetch_count', 'http_failure_count', 'r2_read_failure_count', 'unique_successful_slot_count', 'unique_valid_slot_count', 'missing_interval_count']) accumulator[key] += stats[key];
@@ -254,7 +257,7 @@ for (const source of sources) {
     publish_daily_dataset: false,
     private_archive: true,
     output_files: outputFiles,
-    ...(snapshotWriter ? {snapshot_schema_version:'2',snapshot_count:snapshotCount,snapshot_files:[path.relative(out,snapshotFile).replaceAll('\\','/')]} : {}),
+    ...(snapshotWriter ? {snapshot_schema_version:'2',snapshot_count:snapshotCount,snapshot_files:snapshotWriter.files.map(file=>path.relative(out,file).replaceAll('\\','/'))} : {}),
   });
 }
 

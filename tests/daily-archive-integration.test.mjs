@@ -143,10 +143,13 @@ describe('daily archive fixture integration', () => {
 
     const wb = manifest.sources.find((source) => source.source_id === 'wakayama-bus');
     expect(wb.snapshot_count).toBe(2);
-    const snapshots=await parquet.ParquetReader.openFile(path.join(dayDir,'snapshots-v2','wakayama-bus.parquet'));
-    const snapshotRows=[];const snapshotCursor=snapshots.getCursor();let snapshotRow;
-    while((snapshotRow=await snapshotCursor.next())!==null)snapshotRows.push(snapshotRow);
-    await snapshots.close();
+    const snapshotRows=[];
+    for(const file of wb.snapshot_files){
+      const snapshots=await parquet.ParquetReader.openFile(path.join(outputDir,file));
+      const snapshotCursor=snapshots.getCursor();let snapshotRow;
+      while((snapshotRow=await snapshotCursor.next())!==null)snapshotRows.push(snapshotRow);
+      await snapshots.close();
+    }
     expect(snapshotRows).toHaveLength(2);
     expect(snapshotRows.some(r=>Number(r.entity_count)===0 && JSON.parse(r.decoded_entities_json).length===0)).toBe(true);
     const wbVehicle = wb.feeds.find((feed) => feed.feed_type === 'vehicle-positions');
