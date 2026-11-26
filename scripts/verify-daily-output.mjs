@@ -19,8 +19,10 @@ for (const source of manifest.sources) {
   let entities = 0, snapshots = 0, legacyRows = 0;
   const stats = new Map(), keys = new Set();
   for (const file of source.output_files || []) {
-    const reader = await parquet.ParquetReader.openFile(path.join(root, file));
-    try { const cursor = reader.getCursor(); while (await cursor.next()) legacyRows++; }
+    // Legacy count verification needs the footer count, not timestamp decoding.
+    // rawStatistics avoids parquetjs-lite's BigInt timestamp statistics bug.
+    const reader = await parquet.ParquetReader.openFile(path.join(root, file), {rawStatistics:true});
+    try { legacyRows += Number(reader.getRowCount()); }
     finally { await reader.close(); }
   }
   for (const file of source.snapshot_files || []) {
