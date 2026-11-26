@@ -24,11 +24,11 @@ it('distinguishes fresh empty feeds, stale feeds and corrupted entity counts',as
         await writer.close();
       }
       // Legacy entities are independently counted by the verifier.
-      const entitySchema=new parquet.ParquetSchema({id:{type:'UTF8'}});
+      const entitySchema=new parquet.ParquetSchema({id:{type:'UTF8'},observed_at:{type:'TIMESTAMP_MILLIS'}});
       const manifest={date,timezone:'Asia/Tokyo',processing:{status:'success'},sources:[]};
       for(const source of sources){
         const writer=await parquet.ParquetWriter.openFile(entitySchema,path.join(day,source+'-entities.parquet'));
-        if(stale){await writer.appendRow({id:'one'});await writer.appendRow({id:'two'});}
+        if(stale){await writer.appendRow({id:'one',observed_at:new Date('2026-11-25T01:00:00Z')});await writer.appendRow({id:'two',observed_at:new Date('2026-11-25T01:01:00Z')});}
         await writer.close();
         manifest.sources.push({source_id:source,snapshot_schema_version:'2',snapshot_count:2,parsed_entity_count:stale?2:0,snapshot_files:[`2026/11/25/${source}.parquet`],output_files:[`2026/11/25/${source}-entities.parquet`],feeds:['vehicle-positions','trip-updates'].map(feed_type=>({feed_type,valid_feed_count:1,unique_valid_slot_count:1,expected_fetch_count:1}))});
       }
