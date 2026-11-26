@@ -5,7 +5,7 @@ function formatBytes(value) {
   return `${Number(value).toLocaleString('en-US')} bytes (${(Number(value) / 1e9).toFixed(3)} GB)`;
 }
 
-export function renderJobSummary(manifest, { jobStatus = 'unknown', workflowElapsedMs = null, runUrl = '' } = {}) {
+export function renderJobSummary(manifest, { jobStatus = 'unknown', workflowElapsedMs = null, runUrl = '', quality = null } = {}) {
   const lines = [
     `## Mobility Archive daily archive — ${manifest?.date ?? 'date unavailable'} (JST)`,
     '',
@@ -30,6 +30,11 @@ export function renderJobSummary(manifest, { jobStatus = 'unknown', workflowElap
       }
     }
   }
+  lines.push('', `### Data quality: ${quality?.status ?? 'not verified'}`);
+  if (quality) {
+    for (const feed of quality.feeds || []) lines.push(`- ${feed.source} / ${feed.feed}: ${feed.count} snapshots, ${feed.payloads} unique payloads, ${feed.stale}/${feed.nonempty} nonempty snapshots older than 5 minutes.`);
+    lines.push(`- Integrity errors: ${quality.errors.length}; quality warnings: ${quality.warnings.length}. Full diagnostics are in the retained quality artifact.`);
+  }
   if (runUrl) lines.push('', `[Open this Actions run](${runUrl})`);
   if (process.env.WORKFLOW_URL) lines.push(`[View daily workflow run history](${process.env.WORKFLOW_URL})`);
   lines.push('', '> Summary contains aggregate operational metrics only; raw payloads, object keys, and credentials are intentionally omitted.', '');
@@ -52,7 +57,9 @@ if (summaryPath) {
     // A workflow failure before manifest generation is still summarized below.
   }
   const workflowElapsedMs = elapsedSinceEpochMs(process.env.WORKFLOW_STARTED_AT);
-  const text = renderJobSummary(manifest, { jobStatus: process.env.JOB_STATUS, workflowElapsedMs, runUrl: process.env.RUN_URL });
+  let quality = null;
+  try { quality = JSON.parse(await fs.readFile(`${process.env.OUTPUT_DIR || 'data-repo/archive'}/${process.env.ARCHIVE_DATE.replaceAll('-', '/')}/quality.json`, 'utf8')); } catch {}
+  const text = renderJobSummary(manifest, { jobStatus: process.env.JOB_STATUS, workflowElapsedMs, runUrl: process.env.RUN_URL, quality });
   await fs.appendFile(summaryPath, text, 'utf8');
   if (!manifest && process.env.JOB_STATUS === 'success') process.exitCode = 1;
 }

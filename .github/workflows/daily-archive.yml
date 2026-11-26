@@ -16,6 +16,7 @@ concurrency:
 jobs:
   archive:
     runs-on: ubuntu-latest
+    timeout-minutes: 55
     permissions: {contents: write}
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +54,7 @@ jobs:
         id: build-archive
         env:
           ARCHIVE_DATE: ${{ steps.archive-date.outputs.date }}
-          OUTPUT_DIR: data-repo/archive
+          OUTPUT_DIR: archive-staging
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -62,6 +63,25 @@ jobs:
           WRITE_SNAPSHOT_V2: 'true'
         run: |
           node scripts/daily-archive.mjs
+      - name: Verify archive integrity and feed freshness
+        env:
+          ARCHIVE_DATE: ${{ steps.archive-date.outputs.date }}
+          OUTPUT_DIR: archive-staging
+        run: node scripts/verify-daily-output.mjs
+      - name: Retain diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-quality-${{ steps.archive-date.outputs.date }}
+          path: |
+            archive-staging/**/manifest.json
+            archive-staging/**/quality.json
+          retention-days: 14
+      - name: Install verified day
+        id: install-day
+        env:
+          ARCHIVE_DATE: ${{ steps.archive-date.outputs.date }}
+        run: node scripts/install-verified-day.mjs archive-staging data-repo/archive
       - name: Commit data repository
         if: success()
         working-directory: data-repo
@@ -77,7 +97,7 @@ jobs:
         if: always()
         env:
           ARCHIVE_DATE: ${{ steps.archive-date.outputs.date || inputs.archive_date || '' }}
-          OUTPUT_DIR: data-repo/archive
+          OUTPUT_DIR: ${{ steps.install-day.outcome == 'success' && 'data-repo/archive' || 'archive-staging' }}
           JOB_STATUS: ${{ job.status }}
           WORKFLOW_STARTED_AT: ${{ steps.archive-date.outputs.started_at_ms }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
